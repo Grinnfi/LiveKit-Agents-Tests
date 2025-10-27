@@ -1,0 +1,10 @@
+pydantic
+python-dotenv
+
+livekit
+
+livekit-agents[cartesia, deepgram, google]
+
+livekit-plugins-noise-cancellation
+livekit-plugins-silero
+livekit-plugins-turn-detector
