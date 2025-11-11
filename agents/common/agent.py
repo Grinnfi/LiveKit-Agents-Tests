@@ -59,6 +59,8 @@ class BaseAgent(Agent):
                 return chunk
 
             yield process_stream(chunk=chunk)
+            
+# --- Functions ---
 
     @function_tool
     async def debug(
@@ -76,7 +78,7 @@ class BaseAgent(Agent):
             Test - chat ctx:
                 {self.chat_ctx.to_dict()}
         """)
-        return "Debug Printed"
+        return None
     
     @function_tool
     async def end_call(self) -> None:  
@@ -92,6 +94,8 @@ class BaseAgent(Agent):
         await self.session.aclose()  
         
         return None
+
+# --- Nodes ---
 
     # Prints transcription and timing
     async def transcription_node(

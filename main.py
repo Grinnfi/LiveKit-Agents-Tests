@@ -2,6 +2,12 @@ import logging
 import os
 import asyncio
 import re # change llm output
+import json # dump data
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor
+
+import wave
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -19,13 +25,14 @@ from livekit.agents import (
     metrics,
     llm,
     FunctionTool,
+    ConversationItemAddedEvent,
 )
-from livekit.agents.llm import function_tool
-from livekit.plugins import cartesia, deepgram, noise_cancellation, google, silero
-# from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from livekit.plugins import cartesia, deepgram, noise_cancellation, google
+from livekit.plugins import silero #VAD, VADStream, onnx_model
+from livekit.agents.vad import VADEvent, VADEventType
 
 from typing import AsyncIterable #play audio as speach
-from livekit import rtc #play audio as speach
+from livekit import rtc # audio lib
 from livekit.agents.utils.codecs import AudioStreamDecoder #decode audio for streaming
 from pathlib import Path
 
@@ -41,7 +48,75 @@ logging.basicConfig(filename='welcome_agent.log', level=logging.INFO)
 logger = logging.getLogger("agent")
 
 load_dotenv()
-# audio_file = r"audios/teste.mp3"
+
+ROOM_FRAME_RATE = 16000
+
+def _write_wav_frames_original(original_file, original_data: bytes):
+    """Thread-safe helper to write WAV frames."""
+    original_file.writeframes(original_data)
+
+# async def _save_forward_audio_task(self) -> None:
+#     audio_input = self.input.audio
+#     if audio_input is None:
+#         return
+
+#     original_file = None
+#     write_executor = None
+#     if hasattr(self, "log_dir") and self.log_dir:
+#         original_file = wave.open(f"{self.log_dir}/original.wav", "wb")
+#         original_file.setnchannels(1)  # mono
+#         original_file.setsampwidth(2)  # 16-bit
+#         original_file.setframerate(ROOM_FRAME_RATE)
+#         # filtered_file = wave.open(f"{self.log_dir}/filtered.wav", "wb")
+#         # filtered_file.setnchannels(1)  # mono
+#         # filtered_file.setsampwidth(2)  # 16-bit
+#         # filtered_file.setframerate(ROOM_FRAME_RATE)
+
+#         write_executor = ThreadPoolExecutor(
+#             max_workers=1, thread_name_prefix="wav_writer"
+#         )
+#     loop = asyncio.get_event_loop()
+#     async for frame in audio_input:
+#         if self._activity is not None:
+#             # original_data = frame.data.tobytes()
+
+#             # TODO: HPF -> EC -> RNNoise (or another DNN NS) -> AGC / final gain — disable the WebRTC NS when you run RNNoise
+#             # denoised_frame = self.denoiser.process(frame)
+#             self._activity.push_audio(frame)
+
+#             if original_file:
+#                 loop.run_in_executor(
+#                     write_executor,
+#                     _write_wav_frames_original,
+#                     original_file,
+#                     frame.data.tobytes(),
+#                 )
+
+
+# # -- custom vad --
+# def push_frame(self, frame: rtc.AudioFrame) -> None:
+#     self._check_input_not_ended()
+#     self._check_not_closed()
+#     # self.original_file.writeframes(frame.data.tobytes())
+#     # denoised_frame = self.denoiser.process(frame)
+#     # self.filtered_file.writeframes(denoised_frame.data.tobytes())
+#     self._input_ch.send_nowait(frame)
+
+# def stream(self) -> VADStream:
+#     # denoiser = RNNoiseDenoiser(sample_rate=ROOM_FRAME_RATE)
+#     VADStream.push_frame = push_frame
+#     stream = VADStream(
+#         self,
+#         self._opts,
+#         onnx_model.OnnxModel(
+#             onnx_session=self._onnx_session, sample_rate=self._opts.sample_rate
+#         ),
+#     )
+#     self._streams.add(stream)
+#     return stream
+
+# VAD.stream = stream # overwrite stream logic
+
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
@@ -77,7 +152,6 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=False,
     )
 
-
     # To use a realtime model instead of a voice pipeline, use the following session setup instead:
     # session = AgentSession(
     #     # See all providers at https://docs.livekit.io/agents/integrations/realtime/
@@ -95,10 +169,36 @@ async def entrypoint(ctx: JobContext):
     # For more information, see https://docs.livekit.io/agents/build/metrics/
     usage_collector = metrics.UsageCollector()
 
-    # @session.on("metrics_collected")
-    # def _on_metrics_collected(ev: MetricsCollectedEvent):
-    #     metrics.log_metrics(ev.metrics)
-    #     usage_collector.collect(ev.metrics)
+    now = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+    log_dir = os.path.join("logs", timestamp)
+    os.makedirs(log_dir, exist_ok=True)
+    
+    AgentSession.log_dir = log_dir
+    # AgentSession._forward_audio_task = _save_forward_audio_task
+
+    # Event handler to save probability and audio
+    # def save_debug_data(ev):
+        # speech_dir = os.path.join(log_dir, f"{timestamp}speech_probability.json")
+        # audio_dir = os.path.join(log_dir, f"{timestamp}audio_frames.raw")
+
+        # # Save speech probability
+        # with open(speech_dir, "a") as prob_file:
+        #     json.dump({"timestamp": ev.timestamp, "probability": ev.probability}, prob_file)
+        #     prob_file.write("\n")
+
+        # # Save audio frames
+        # with open(audio_dir, "ab") as audio_file:
+        #     for frame in ev.frames:
+        #         audio_file.write(frame.data)
+
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        metrics.log_metrics(ev.metrics)
+        usage_collector.collect(ev.metrics)
+        # print(ev.metrics)
+        # if ev.type == "inference_done":
+        #     save_debug_data(ev)
 
     async def log_usage():
         summary = usage_collector.get_summary()

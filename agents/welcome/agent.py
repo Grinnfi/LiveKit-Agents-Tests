@@ -35,6 +35,6 @@ class WelcomeAgent(BaseAgent):
         
     async def on_enter(self):
         print("Welcome Agent ON")
-        self.session.say(f"Olá, sou a atendente virtual da {self.state.enterprise_name}. Estou falando com {self.state.client_name}?", allow_interruptions=False)
+        # self.session.say(f"Olá, sou a atendente virtual da {self.state.enterprise_name}. Estou falando com {self.state.client_name}?", allow_interruptions=False)
         return await super().on_enter()
     
