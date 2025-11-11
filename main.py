@@ -55,42 +55,42 @@ def _write_wav_frames_original(original_file, original_data: bytes):
     """Thread-safe helper to write WAV frames."""
     original_file.writeframes(original_data)
 
-# async def _save_forward_audio_task(self) -> None:
-#     audio_input = self.input.audio
-#     if audio_input is None:
-#         return
+async def _save_forward_audio_task(self) -> None:
+    audio_input = self.input.audio
+    if audio_input is None:
+        return
 
-#     original_file = None
-#     write_executor = None
-#     if hasattr(self, "log_dir") and self.log_dir:
-#         original_file = wave.open(f"{self.log_dir}/original.wav", "wb")
-#         original_file.setnchannels(1)  # mono
-#         original_file.setsampwidth(2)  # 16-bit
-#         original_file.setframerate(ROOM_FRAME_RATE)
-#         # filtered_file = wave.open(f"{self.log_dir}/filtered.wav", "wb")
-#         # filtered_file.setnchannels(1)  # mono
-#         # filtered_file.setsampwidth(2)  # 16-bit
-#         # filtered_file.setframerate(ROOM_FRAME_RATE)
+    original_file = None
+    write_executor = None
+    if hasattr(self, "log_dir") and self.log_dir:
+        original_file = wave.open(f"{self.log_dir}/original.wav", "wb")
+        original_file.setnchannels(1)  # mono
+        original_file.setsampwidth(2)  # 16-bit
+        original_file.setframerate(ROOM_FRAME_RATE)
+        # filtered_file = wave.open(f"{self.log_dir}/filtered.wav", "wb")
+        # filtered_file.setnchannels(1)  # mono
+        # filtered_file.setsampwidth(2)  # 16-bit
+        # filtered_file.setframerate(ROOM_FRAME_RATE)
 
-#         write_executor = ThreadPoolExecutor(
-#             max_workers=1, thread_name_prefix="wav_writer"
-#         )
-#     loop = asyncio.get_event_loop()
-#     async for frame in audio_input:
-#         if self._activity is not None:
-#             # original_data = frame.data.tobytes()
+        write_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="wav_writer"
+        )
+    loop = asyncio.get_event_loop()
+    async for frame in audio_input:
+        if self._activity is not None:
+            # original_data = frame.data.tobytes()
 
-#             # TODO: HPF -> EC -> RNNoise (or another DNN NS) -> AGC / final gain — disable the WebRTC NS when you run RNNoise
-#             # denoised_frame = self.denoiser.process(frame)
-#             self._activity.push_audio(frame)
+            # TODO: HPF -> EC -> RNNoise (or another DNN NS) -> AGC / final gain — disable the WebRTC NS when you run RNNoise
+            # denoised_frame = self.denoiser.process(frame)
+            self._activity.push_audio(frame)
 
-#             if original_file:
-#                 loop.run_in_executor(
-#                     write_executor,
-#                     _write_wav_frames_original,
-#                     original_file,
-#                     frame.data.tobytes(),
-#                 )
+            if original_file:
+                loop.run_in_executor(
+                    write_executor,
+                    _write_wav_frames_original,
+                    original_file,
+                    frame.data.tobytes(),
+                )
 
 
 # # -- custom vad --
@@ -175,7 +175,7 @@ async def entrypoint(ctx: JobContext):
     os.makedirs(log_dir, exist_ok=True)
     
     AgentSession.log_dir = log_dir
-    # AgentSession._forward_audio_task = _save_forward_audio_task
+    AgentSession._forward_audio_task = _save_forward_audio_task
 
     # Event handler to save probability and audio
     # def save_debug_data(ev):
