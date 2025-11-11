@@ -13,6 +13,8 @@ from livekit.agents import (
     function_tool,
     ModelSettings, #log tts
     RunContext,
+    ChatContext,
+    ChatMessage,
 )
 
 from agents.common.states import CallState
@@ -37,6 +39,13 @@ class BaseAgent(Agent):
         super().__init__(instructions= agent_instructions)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.state = state 
+
+    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None: 
+        """"
+        Logic before agent callback.
+        Called when the user has finished speaking, and the LLM is about to respond
+        """
+        self.session.session_state_tracker # TODO save transition
 
     async def llm_node(
         self,

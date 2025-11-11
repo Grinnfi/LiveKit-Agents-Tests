@@ -6,6 +6,8 @@ import json # dump data
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import List, Union
 
 import wave
 
@@ -121,6 +123,65 @@ async def _save_forward_audio_task(self) -> None:
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
+# @dataclass
+# class UserData:
+#     # https://github.com/livekit/livekit_composite/blob/cd1a2500/livekit-examples/python-agents-examples/context-readmes/USERDATA_GUIDE.md#basic-structure
+#     # Required context reference
+#     ctx: JobContext
+    
+#     # Participant information etc
+#     test_data: str = ""
+    
+#     # Application state
+#     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
+#     state: str = "initial"
+#     state_history: List[str] = field(default_factory=list)
+    
+#     # Business logic data
+#     user_preferences: Dict[str, Any] = field(default_factory=dict)
+#     session_data: Dict[str, Any] = field(default_factory=dict)
+
+#     def transition_to(self, new_state: str):
+#         self.state_history.append(self.state)
+#         self.state = new_state
+
+@dataclass
+class SessionStateTracker:
+    """
+    Stores the log of ALL state segments. The last entry is the ACTIVE segment.
+    Format: List of [state_name (str), interaction_count (int)]
+    """
+    # https://github.com/livekit/livekit_composite/blob/cd1a2500/livekit-examples/python-agents-examples/context-readmes/USERDATA_GUIDE.md
+    ctx: JobContext # LiveKit context
+    state: str # The currently active state
+    session_log: List[List[Union[str, int]]] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Initializes the session log with the starting state and a count of 0."""
+        self.session_log.append([self.state, 0])
+    
+    def transition_to(self, new_agent: str):
+        """
+        Saves the agent transition on session.session_log
+        Add the new agent to the session_log with a interaction count of 0.
+        """
+        self.state = new_agent
+        self.session_log.append([new_agent, 0])
+
+    def count_state_interaction(self):
+        """
+        Increments the interaction counter for the last entry in the session_log, 
+        which always represents the current active state.
+        """
+        if self.session_log:
+            # session_log[-1] refers to the last (active) segment.
+            # session_log[-1][1] refers to the integer count within that segment.
+            self.session_log[-1][1] += 1
+        else:
+            # Fallback: If the log is somehow empty, re-initialize the state segment.
+            print("Error: session_log is empty. Re-initializing current state.")
+            self.session_log.append([self.state, 1])
+
 
 async def entrypoint(ctx: JobContext):
     client_data = CallState(client_name='Daniel', client_cpf='12344444789', enterprise_name='LiveKit')
@@ -130,8 +191,11 @@ async def entrypoint(ctx: JobContext):
         "room": ctx.room.name,
     }
 
+    session_state_tracker = SessionStateTracker(ctx=ctx)
+    
     # Set up a voice AI pipeline using Gemini, Cartesia, Deepgram, and the LiveKit turn detector
-    session = AgentSession(
+    session = AgentSession[SessionStateTracker](
+        session_state_tracker = session_state_tracker,
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
         # See all providers at https://docs.livekit.io/agents/integrations/llm/
         # llm=google.beta.realtime.RealtimeModel(model="gemini-2.0-flash-exp",voice="Puck"),
